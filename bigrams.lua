@@ -34,21 +34,23 @@ local weights = matrix { { 0.2, 0.8, - 0.5, 1 },
 
 local biases = matrix{ 2, 3, 0.5 }
 
-print(inputs:shape(), ":", weights:shape())
+print("inputs", inputs:shape()) 
+print("weights", weights:shape())
 
 
-local outputs = {}
--- we cannot do simply outputs = weights:dot(inputs) + biases, because we get unconformable matrix error
--- so we need to calculate dot product for each row separately
-for i = 1, weights:shape(1) do
-  local curr = weights[i]
-  outputs[#outputs+1] = curr:dot(inputs)
-end
-outputs = matrix(outputs)
-outputs = outputs + biases
+-- -- we cannot do simply outputs = weights:dot(inputs) + biases, because we get unconformable matrix error
+-- -- so we need to calculate dot product for each row separately
+-- it seems that weights * inputs works as intended - a * b = numpy.dot(a,b)
+-- local outputs = {}
+-- for i = 1, weights:shape(1) do
+--   local curr = weights[i]
+--   outputs[#outputs+1] = curr:dot(inputs)
+-- end
+-- outputs = matrix(outputs)
+-- outputs = outputs + biases
 
+local outputs = weights * inputs + biases
 
--- outputs = weights:dot(inputs, true) -- + biases
 
 -- # Or Use this method 
 -- # np.dot(inputs, weights.T) + biases
@@ -61,8 +63,9 @@ outputs:list()
 -- logical function sexample
 --
 --
-local function sigmoid(x)
-  return 1/(1 + x:mul(-1):exp())
+local function sigmoid(m)
+  local n = m:copy()
+  return n:map(function(x) return 1/(1 + math.exp(-x)) end)
 end
 
 local function rand(a, b)
@@ -72,16 +75,20 @@ local function rand(a, b)
 end
 
 local function dot(a, b)
-  local output = {}
-  for i = 1, a:shape(1) do
-    local curr = a[i]
-    output[#output+1] = curr:dot(b)
+  if a:shape(1) > b:shape(1) then
+    local output = {}
+    for i = 1, a:shape(1) do
+      local curr = a[i]
+      output[#output+1] = curr:dot(b)
+    end
+    return matrix(output)
+  else
+    return a * b
   end
-  return matrix(output)
 end
 
 local function forward_prop(w1, w2, x)
-  local z1 = dot(x, w1)
+  local z1 = dot(w1, x)
   local a1 = sigmoid(z1)    
   local z2 = dot(w2, a1)
   local a2 = sigmoid(z2)
@@ -90,13 +97,22 @@ end
 
 local function back_prop(m, w1, w2, z1, a1, z2, a2, y)
   local dz2 = a2-y
-  local dw2 = dot(dz2, a1)/m
-  local dz1 = dot(w2, dz2) * a1*(1-a1)
-  local dw1 = np.dot(dz1, total_input)/m
-  local dw1 = np.reshape(dw1, w1:shape())
+  
+  -- local dw2 = dot(dz2, a1)/m
+  local dw2 = dot( a1, dz2)  /m
+  print "-----------"
+  dz2:list()
+  w2:list()
+  -- local dz1 = dot(w2, dz2) * a1*(1-a1)
+  print(dz2:shape())
+  print(w2:shape())
 
-  local dw2 = np.reshape(dw2,w2.shape)    
-  return dz2,dw2,dz1,dw1
+  local dz1 = w2 * dz2 -- * a1*(1-a1)
+  -- local dw1 = dot(dz1, total_input)/m
+  -- local dw1 = matrix.reshape(dw1, w1:shape())
+
+  -- local dw2 = matrix.reshape(dw2,w2:shape())    
+  -- return dz2,dw2,dz1,dw1
 end
 
 local a = matrix {0,0,1,1}
@@ -105,7 +121,7 @@ local total_input = matrix.concat (a,b)
 -- print(total_input:shape())
 
 
-local y_xor = matrix {{0, 1, 1, 0}}
+local y_xor = matrix {0, 1, 1, 0}
 
 -- # Define the number of neurons
 local input_neurons, hidden_neurons, output_neurons = 2, 2, 1
@@ -121,7 +137,8 @@ rng.seed(42)
 
 local w1 = rand(hidden_neurons, input_neurons)
 local w2 = rand(output_neurons, hidden_neurons)
-
+-- w1:list()
+-- w2:list()
 
 local losses ={} 
 local iterations = 10000
@@ -130,12 +147,11 @@ for i = 1, iterations do
   local z1, a1, z2, a2 = forward_prop(w1, w2, total_input)
   -- local loss = -(1/samples)*np.sum(y_xor*np.log(a2)+(1-y_xor)*np.log(1-a2))
   -- local loss = -(1/samples)*(y_xor*a2:log()+(1-y_xor)*(1-a2):log()):sum()
-  print(y_xor:shape())
-  print(a2:shape())
-
-  local loss = (y_xor*a2:log())--+(1-y_xor)*(1-a2):log()):sum()
-  -- losses[#losses+1] = loss
-  -- local da2, dw2, dz1, dw1 = back_prop(samples, w1, w2, z1, a1, z2, a2, y_xor)
+  -- local loss = -(1/samples)* matrix.sum(y_xor* a2:log()+(1-y_xor) * matrix.log(1-a2))
+  local loss = -(1/samples)* matrix.sum(a2:log():mul( y_xor) + matrix.mul((1-y_xor), matrix.log(1-a2)))
+  print(loss)
+  losses[#losses+1] = loss
+  local da2, dw2, dz1, dw1 = back_prop(samples, w1, w2, z1, a1, z2, a2, y_xor)
   -- w2 = w2-lr*dw2
   -- w1 = w1-lr*dw1
 end
